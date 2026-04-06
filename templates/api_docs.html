@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block page_title %}API Docs{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h3>📡 API Documentation</h3>
+    <p><strong>Endpoint:</strong> <code>GET /api/validate?key=LICENSE_KEY&device=DEVICE_ID</code></p>
+    <h4>Response (Success):</h4>
+    <pre style="background:#2c3e50; color:#e6edf3; padding:15px; border-radius:5px;">
+{
+    "status": "active",
+    "message": "License valid",
+    "expiry_date": "2026-05-03 14:32:25",
+    "days_left": 365
+}
+    </pre>
+    <h4>Python Example:</h4>
+    <pre style="background:#2c3e50; color:#e6edf3; padding:15px; border-radius:5px;">
+import requests
+r = requests.get('http://YOUR_SERVER_IP:5000/api/validate', 
+                  params={'key': 'YOUR_KEY', 'device': 'DEVICE_ID'})
+print(r.json())
+    </pre>
+</div>
+{% endblock %}
