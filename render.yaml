@@ -2,8 +2,6 @@ services:
   - type: web
     name: license-admin-panel
     runtime: python
-    repo: https://github.com/kumaranik646/license-admin-panel
-    branch: main
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
@@ -17,6 +15,6 @@ services:
         generateValue: true
       - key: RENDER
         value: true
+      - key: DATABASE_URL
+        value: postgresql://license_db_k7lv_user:Gm7GwIIM8ivq8MmAlo0RaiI2BnP5TIxF@dpg-d79pg9p5pdvs73bnq5v0-a/license_db_k7lv
     plan: free
-    healthCheckPath: /login
-    autoDeploy: true
