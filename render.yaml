@@ -2,7 +2,7 @@ services:
   - type: web
     name: license-admin-panel
     runtime: python
-    repo: https://github.com/your-username/license-admin-panel
+    repo: https://github.com/kumaranik646/license-admin-panel
     branch: main
     buildCommand: |
       pip cache purge
