@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block page_title %}Activity Logs{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h3>📜 Activity Logs</h3>
+    <table>
+        <thead><tr><th>User</th><th>Action</th><th>Details</th><th>IP</th><th>Time</th></tr></thead>
+        <tbody>
+            {% for log in logs.items %}
+            <tr>
+                <td>{{ log.username or 'System' }}</td>
+                <td>{{ log.action }}</td>
+                <td>{{ log.details or '-' }}</td>
+                <td>{{ log.ip_address or '-' }}</td>
+                <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+     </table>
+    {% if logs.pages > 1 %}
+    <div class="pagination">
+        {% if logs.has_prev %}<a href="?page={{ logs.prev_num }}">Previous</a>{% endif %}
+        <span>Page {{ logs.page }} of {{ logs.pages }}</span>
+        {% if logs.has_next %}<a href="?page={{ logs.next_num }}">Next</a>{% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
