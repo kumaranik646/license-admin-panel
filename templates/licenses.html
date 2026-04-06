@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block page_title %}Licenses{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+        <h3>📋 All Licenses</h3>
+        {% if current_user.has_permission('create_licenses') %}
+        <a href="{{ url_for('create_license') }}" class="btn btn-success">+ Create License</a>
+        {% endif %}
+    </div>
+    
+    {% if current_user.role != 'admin' %}
+    <div style="background: #e8f4fd; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+        ℹ️ You can only see and manage licenses that you have created.
+    </div>
+    {% endif %}
+    
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>License Key</th>
+                    <th>Device ID (Locked To)</th>
+                    <th>Status</th>
+                    <th>Expiry Date</th>
+                    <th>Days Left</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for lic in licenses %}
+                <tr style="{% if lic.expiry_date < now %}background-color: #fff3cd;{% endif %}">
+                    <td>{{ lic.id }}</td>
+                    <td><code>{{ lic.license_key }}</code></td>
+                    <td>
+                        {% if lic.device_id %}
+                            <span style="color: #27ae60; font-family: monospace;">{{ lic.device_id[:20] }}...</span>
+                            <a href="{{ url_for('unassign_device', id=lic.id) }}" class="btn btn-warning btn-sm" onclick="return confirm('Remove device lock?')" style="margin-left: 5px;">🔓</a>
+                        {% else %}
+                            <span style="color: #999;">Not locked</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="status-badge status-{{ lic.status }}">
+                            {{ lic.status }}
+                        </span>
+                    </td>
+                    <td>{{ lic.expiry_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        {% set days_left = (lic.expiry_date - now).days %}
+                        {% if days_left < 0 %}
+                            <span style="color: red;">Expired</span>
+                        {% elif days_left < 7 %}
+                            <span style="color: orange;">{{ days_left }} days</span>
+                        {% else %}
+                            <span style="color: green;">{{ days_left }} days</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if current_user.role == 'admin' or (current_user.has_permission('edit_licenses') and lic.created_by == current_user.id) %}
+                        <a href="{{ url_for('edit_license', id=lic.id) }}" class="btn btn-warning btn-sm">Edit</a>
+                        {% endif %}
+                        {% if current_user.role == 'admin' or (current_user.has_permission('delete_licenses') and lic.created_by == current_user.id) %}
+                        <a href="{{ url_for('delete_license', id=lic.id) }}" class="btn btn-danger btn-sm" onclick="return confirm('Delete?')">Del</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    {% if not licenses %}
+    <div style="text-align: center; padding: 40px;">
+        <p>No licenses found.</p>
+        {% if current_user.has_permission('create_licenses') %}
+        <a href="{{ url_for('create_license') }}" class="btn btn-success">Create your first license</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
