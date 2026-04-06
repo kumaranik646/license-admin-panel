@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block page_title %}Edit License{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h3>✏️ Edit License: {{ license.license_key }}</h3>
+    
+    <div style="background: #f0f0f0; padding: 10px; border-radius: 5px; margin-bottom: 20px;">
+        <strong>Current Expiry:</strong> {{ license.expiry_date.strftime('%Y-%m-%d %H:%M:%S') }}
+        {% if license.expiry_date > now %}
+            <span class="status-badge status-active">Valid</span>
+        {% else %}
+            <span class="status-badge status-expired">Expired</span>
+        {% endif %}
+    </div>
+    
+    <form method="POST" action="{{ url_for('edit_license', id=license.id) }}">
+        <div class="form-group">
+            <label>Device ID (Optional - leave empty for no device lock)</label>
+            <input type="text" name="device_id" value="{{ license.device_id or '' }}" placeholder="e.g., C389-63C4-B18C-38A7">
+            <small>💡 Current device lock: {% if license.device_id %}<strong>{{ license.device_id }}</strong>{% else %}Not locked{% endif %}</small>
+            {% if license.device_id %}
+            <br><a href="{{ url_for('unassign_device', id=license.id) }}" class="btn btn-warning btn-sm" style="margin-top: 5px;" onclick="return confirm('Remove device lock from this license?')">🔓 Unassign Device</a>
+            {% endif %}
+        </div>
+        
+        <div class="form-group">
+            <label>Update Method</label>
+            <select name="expiry_type" id="expiry_type" onchange="toggleFields()">
+                <option value="days">Set from now (days)</option>
+                <option value="hours">Set from now (hours)</option>
+                <option value="minutes">Set from now (minutes)</option>
+                <option value="custom">Set custom date</option>
+                <option value="datetime">Set custom date & time</option>
+                <option value="extend">Extend from current expiry</option>
+            </select>
+        </div>
+        
+        <div id="value_fields" class="form-group">
+            <label>Value</label>
+            <input type="number" name="expiry_value" value="30" min="1">
+            <select name="expiry_unit">
+                <option value="days">Days</option>
+                <option value="hours">Hours</option>
+                <option value="minutes">Minutes</option>
+            </select>
+        </div>
+        
+        <div id="custom_date_field" class="form-group" style="display: none;">
+            <label>New Expiry Date</label>
+            <input type="date" name="expiry_date_custom" value="{{ license.expiry_date.strftime('%Y-%m-%d') }}">
+        </div>
+        
+        <div id="custom_datetime_field" class="form-group" style="display: none;">
+            <label>New Expiry Date & Time</label>
+            <input type="datetime-local" name="expiry_datetime_custom" value="{{ license.expiry_date.strftime('%Y-%m-%dT%H:%M') }}">
+        </div>
+        
+        <div id="extend_fields" class="form-group" style="display: none;">
+            <label>Extend by</label>
+            <input type="number" name="extend_value" value="30" min="1">
+            <select name="extend_unit">
+                <option value="days">Days</option>
+                <option value="months">Months</option>
+                <option value="years">Years</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label>Status</label>
+            <select name="status">
+                <option value="active" {% if license.status == 'active' %}selected{% endif %}>Active</option>
+                <option value="inactive" {% if license.status == 'inactive' %}selected{% endif %}>Inactive</option>
+                <option value="expired" {% if license.status == 'expired' %}selected{% endif %}>Expired</option>
+                <option value="suspended" {% if license.status == 'suspended' %}selected{% endif %}>Suspended</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label>Notes</label>
+            <textarea name="notes" rows="3">{{ license.notes or '' }}</textarea>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Update License</button>
+        <a href="{{ url_for('licenses') }}" class="btn btn-warning">Cancel</a>
+    </form>
+</div>
+
+<div class="card">
+    <h3>🔄 Renew License</h3>
+    <form method="POST" action="{{ url_for('renew_license', id=license.id) }}">
+        <div class="form-group">
+            <label>Renew for</label>
+            <input type="number" name="renew_value" value="30" min="1" required>
+            <select name="renew_type">
+                <option value="days">Days</option>
+                <option value="months">Months</option>
+                <option value="years">Years</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-success">Renew License</button>
+    </form>
+</div>
+
+<script>
+function toggleFields() {
+    var type = document.getElementById('expiry_type').value;
+    document.getElementById('value_fields').style.display = (type === 'days' || type === 'hours' || type === 'minutes') ? 'block' : 'none';
+    document.getElementById('custom_date_field').style.display = (type === 'custom') ? 'block' : 'none';
+    document.getElementById('custom_datetime_field').style.display = (type === 'datetime') ? 'block' : 'none';
+    document.getElementById('extend_fields').style.display = (type === 'extend') ? 'block' : 'none';
+}
+</script>
+{% endblock %}
