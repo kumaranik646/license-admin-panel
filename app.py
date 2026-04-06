@@ -8,7 +8,7 @@ import random
 import time
 from datetime import datetime, timedelta, timezone
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 
@@ -476,6 +476,39 @@ def profile():
     
     return render_template('profile.html')
 
+# ========== সেলফ পিং সিস্টেম (সার্ভার নিজেই নিজেকে জাগিয়ে রাখে) ==========
+
+def start_self_ping():
+    """প্রতি ৮-১২ মিনিট পর পর নিজেকে পিং দিয়ে সার্ভারকে জাগিয়ে রাখে"""
+    
+    def ping_loop():
+        # Render এ থাকলে নিজের URL বের করুন
+        if os.environ.get('RENDER'):
+            hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '')
+            if hostname:
+                base_url = f"https://{hostname}"
+            else:
+                base_url = "https://license-admin-panel.onrender.com"  # আপনার Render URL বসান
+        else:
+            base_url = "http://localhost:5000"
+        
+        ping_url = f"{base_url}/api/validate?key=self_ping_keepalive&device=self"
+        
+        while True:
+            interval = random.randint(480, 720)  # 8-12 মিনিট
+            time.sleep(interval)
+            
+            try:
+                response = requests.get(ping_url, timeout=10)
+                print(f"✅ Self-ping sent at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Status: {response.status_code}")
+            except Exception as e:
+                print(f"❌ Self-ping failed: {e}")
+    
+    ping_thread = threading.Thread(target=ping_loop)
+    ping_thread.daemon = True
+    ping_thread.start()
+    print("🚀 Self-ping system started!")
+
 # ========== ডাটাবেস তৈরি ও ডিফল্ট অ্যাডমিন ==========
 
 with app.app_context():
@@ -503,50 +536,6 @@ with app.app_context():
         db.session.add(demo)
         db.session.commit()
         print("✅ Demo license created")
-
-# ========== সেলফ পিং সিস্টেম (সার্ভার নিজেই নিজেকে জাগিয়ে রাখে) ==========
-
-def start_self_ping():
-    """প্রতি ৮-১২ মিনিট পর পর নিজেকে পিং দিয়ে সার্ভারকে জাগিয়ে রাখে"""
-    
-    def ping_loop():
-        # Render এ থাকলে নিজের URL বের করুন
-        if os.environ.get('RENDER'):
-            # RENDER_EXTERNAL_HOSTNAME এ আপনার অ্যাপের URL থাকে
-            hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '')
-            if hostname:
-                base_url = f"https://{hostname}"
-            else:
-                # যদি RENDER_EXTERNAL_HOSTNAME না থাকে, তাহলে Render দেওয়া URL ব্যবহার করুন
-                base_url = "https://license-admin-panel.onrender.com"  # আপনার Render URL বসান
-        else:
-            # লোকাল ডেভেলপমেন্টের জন্য
-            base_url = "http://localhost:5000"
-        
-        ping_url = f"{base_url}/api/validate?key=self_ping_keepalive&device=self"
-        
-        while True:
-            # ৮ থেকে ১২ মিনিটের মধ্যে র্যান্ডম সময় (480-720 সেকেন্ড)
-            interval = random.randint(480, 720)
-            time.sleep(interval)
-            
-            try:
-                response = requests.get(ping_url, timeout=10)
-                print(f"✅ Self-ping sent at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Status: {response.status_code}")
-            except Exception as e:
-                print(f"❌ Self-ping failed: {e}")
-    
-    # ব্যাকগ্রাউন্ড ডেমন থ্রেড শুরু করুন
-    ping_thread = threading.Thread(target=ping_loop)
-    ping_thread.daemon = True
-    ping_thread.start()
-    print("🚀 Self-ping system started! Server will ping itself every 8-12 minutes.")
-
-# শুধু Render এনভায়রনমেন্টে সেলফ-পিং চালু করুন (লোকালে চালানোর দরকার নেই)
-if os.environ.get('RENDER'):
-    start_self_ping()
-else:
-    print("📍 Running in local mode - self-ping disabled")
 
 # ========== এন্ট্রি পয়েন্ট ==========
 
