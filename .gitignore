@@ -1,12 +1,75 @@
+# Python
 venv/
 env/
+ENV/
+env.bak/
+venv.bak/
 __pycache__/
+*.py[cod]
 *.pyc
-instance/
+*.pyo
+*.pyd
+.Python
+
+# Database
 *.db
 *.sqlite
+*.sqlite3
+instance/
+*.db-journal
+
+# Flask
 .env
+.flaskenv
+.wsgi
+
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 .DS_Store
+
+# Logs
 *.log
+*.log.*
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Render
+render.yaml.backup
+
+# Local development
+local_settings.py
+config.local.py
+
+# Secrets
+*.key
+*.pem
+*.crt
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Virtual Environment
+lib64/
+include/
+share/
+*.spec
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
