@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block page_title %}Create License{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h3>➕ Create New License</h3>
+    <form method="POST" id="licenseForm">
+        <div class="form-group">
+            <label>License Key (leave empty for auto-generate)</label>
+            <input type="text" name="license_key" placeholder="Auto-generated">
+        </div>
+        
+        <div class="form-group">
+            <label>Device ID (Optional - leave empty for no device lock)</label>
+            <input type="text" name="device_id" placeholder="e.g., C389-63C4-B18C-38A7">
+            <small>💡 If you specify a Device ID, this license will only work on that device</small>
+        </div>
+        
+        <div class="form-group">
+            <label>Expiry Type</label>
+            <select name="expiry_type" id="expiry_type" onchange="toggleExpiryFields()">
+                <option value="days">Days from now</option>
+                <option value="hours">Hours from now</option>
+                <option value="minutes">Minutes from now</option>
+                <option value="custom">Custom Date (YYYY-MM-DD)</option>
+                <option value="datetime">Custom Date & Time</option>
+            </select>
+        </div>
+        
+        <div id="value_fields" class="form-group">
+            <label>Value</label>
+            <input type="number" name="expiry_value" value="365" min="1">
+            <small>Enter number of days/hours/minutes</small>
+        </div>
+        
+        <div id="custom_date_field" class="form-group" style="display: none;">
+            <label>Expiry Date</label>
+            <input type="date" name="expiry_date_custom">
+        </div>
+        
+        <div id="custom_datetime_field" class="form-group" style="display: none;">
+            <label>Expiry Date & Time</label>
+            <input type="datetime-local" name="expiry_datetime_custom">
+        </div>
+        
+        <div class="form-group">
+            <label>Status</label>
+            <select name="status">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="suspended">Suspended</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label>Notes</label>
+            <textarea name="notes" rows="3" placeholder="Optional notes about this license"></textarea>
+        </div>
+        
+        <button type="submit" class="btn btn-success">Create License</button>
+        <a href="{{ url_for('licenses') }}" class="btn btn-primary">Cancel</a>
+    </form>
+</div>
+
+<script>
+function toggleExpiryFields() {
+    var type = document.getElementById('expiry_type').value;
+    document.getElementById('value_fields').style.display = (type === 'days' || type === 'hours' || type === 'minutes') ? 'block' : 'none';
+    document.getElementById('custom_date_field').style.display = (type === 'custom') ? 'block' : 'none';
+    document.getElementById('custom_datetime_field').style.display = (type === 'datetime') ? 'block' : 'none';
+}
+</script>
+{% endblock %}
