@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="stats-grid">
+    <div class="stat-card">
+        <h3>Total Licenses</h3>
+        <div class="number">{{ total_licenses }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Active Licenses</h3>
+        <div class="number">{{ active_licenses }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Expired Licenses</h3>
+        <div class="number">{{ expired_licenses }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Expiring Soon (7d)</h3>
+        <div class="number">{{ expiring_soon }}</div>
+    </div>
+    
+    {% if total_users is not none %}
+    <div class="stat-card">
+        <h3>Total Users</h3>
+        <div class="number">{{ total_users }}</div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h3>Recent Verifications</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>License</th>
+                <th>Device</th>
+                <th>Status</th>
+                <th>Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in recent_logs %}
+            <tr>
+                <td><code>{{ log.license_key[:20] }}...</code></td>
+                <td>{{ log.device_id[:15] if log.device_id else '-' }}...</td>
+                <td><span class="status-badge status-{{ log.status }}">{{ log.status }}</span></td>
+                <td>{{ log.verified_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
