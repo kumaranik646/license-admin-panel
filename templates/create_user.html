@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block page_title %}Create User{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h3>➕ Create User</h3>
+    <form method="POST">
+        <div class="form-group">
+            <label>Username *</label>
+            <input type="text" name="username" required>
+        </div>
+        <div class="form-group">
+            <label>Password *</label>
+            <input type="text" name="password" value="pass123" required>
+            <small>Default: pass123</small>
+        </div>
+        <div class="form-group">
+            <label>Email</label>
+            <input type="email" name="email">
+        </div>
+        <div class="form-group">
+            <label>Role</label>
+            <select name="role">
+                <option value="sub_admin">Sub Admin</option>
+                <option value="admin">Admin</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Permissions (for Sub Admin)</label>
+            {% for perm in permissions %}
+            <div><label><input type="checkbox" name="permissions" value="{{ perm }}"> {{ perm.replace('_',' ').title() }}</label></div>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-success">Create User</button>
+        <a href="{{ url_for('users') }}" class="btn btn-primary">Cancel</a>
+    </form>
+</div>
+{% endblock %}
