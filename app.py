@@ -6,10 +6,7 @@ import hashlib
 import uuid
 import os
 import json
-import threading
 import requests
-import random
-import time
 from dotenv import load_dotenv
 from sqlalchemy import text
 
@@ -18,11 +15,13 @@ load_dotenv()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-key')
 
-# PostgreSQL ডাটাবেস কনফিগারেশন
+# PostgreSQL ডাটাবেস কনফিগারেশন (Railway এর জন্য)
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
+    # Railway 'postgres://' দেয়, SQLAlchemy 'postgresql://' চায়
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url.replace("postgres://", "postgresql://", 1)
 else:
+    # লোকাল ডেভেলপমেন্টের জন্য SQLite
     basedir = os.path.abspath(os.path.dirname(__file__))
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(basedir, "instance", "license.db")}'
 
@@ -577,40 +576,6 @@ def profile():
         return redirect(url_for('profile'))
     
     return render_template('profile.html')
-
-# ========== সেলফ পিং সিস্টেম ==========
-
-def start_self_ping():
-    def ping_loop():
-        if os.environ.get('RENDER'):
-            hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '')
-            if hostname:
-                base_url = f"https://{hostname}"
-            else:
-                base_url = "https://license-admin-panel-srbb.onrender.com"
-        else:
-            base_url = "http://localhost:5000"
-        
-        ping_url = f"{base_url}/api/validate?key=self_ping_keepalive&device=self"
-        
-        while True:
-            interval = random.randint(480, 720)
-            time.sleep(interval)
-            try:
-                requests.get(ping_url, timeout=10)
-                print(f"✅ Self-ping sent at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            except Exception as e:
-                print(f"❌ Self-ping failed: {e}")
-    
-    ping_thread = threading.Thread(target=ping_loop)
-    ping_thread.daemon = True
-    ping_thread.start()
-    print("🚀 Self-ping system started!")
-
-if os.environ.get('RENDER'):
-    start_self_ping()
-else:
-    print("📍 Running in local mode - self-ping disabled")
 
 # ========== INITIALIZE DATABASE ==========
 
