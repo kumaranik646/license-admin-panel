@@ -6,6 +6,10 @@ import hashlib
 import uuid
 import os
 import json
+import threading
+import requests
+import random
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -295,7 +299,6 @@ def edit_license(id):
                 device_id = None
             
             if device_id:
-                # Check if device ID is already used by another license
                 existing = License.query.filter(License.device_id == device_id, License.id != id).first()
                 if existing:
                     flash(f'⚠️ Device ID {device_id} is already assigned to license: {existing.license_key}', 'warning')
@@ -538,14 +541,13 @@ def api_validate():
     if license.expiry_date < get_current_time():
         return jsonify({'status': 'expired', 'message': 'License has expired'})
     
-    # Device lock check - যদি ডিভাইস আইডি সেট করা থাকে এবং মিল না হয়
+    # Device lock check
     if license.device_id and license.device_id != device_id:
         return jsonify({
             'status': 'device_mismatch', 
             'message': f'This license is locked to device: {license.device_id[:10]}...'
         })
     
-    # প্রথমবার ডিভাইস আইডি সেট করা
     if not license.device_id and device_id:
         license.device_id = device_id
         db.session.commit()
@@ -593,6 +595,45 @@ def profile():
         return redirect(url_for('profile'))
     
     return render_template('profile.html')
+
+# ========== সেলফ পিং সিস্টেম (সার্ভার নিজেই নিজেকে জাগিয়ে রাখে) ==========
+
+def start_self_ping():
+    """প্রতি ৮-১২ মিনিট পর পর নিজেকে পিং দিয়ে সার্ভারকে জাগিয়ে রাখে"""
+    
+    def ping_loop():
+        # Render এ থাকলে নিজের URL বের করুন
+        if os.environ.get('RENDER'):
+            hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '')
+            if hostname:
+                base_url = f"https://{hostname}"
+            else:
+                base_url = "https://license-admin-panel.onrender.com"
+        else:
+            base_url = "http://localhost:5000"
+        
+        ping_url = f"{base_url}/api/validate?key=self_ping_keepalive&device=self"
+        
+        while True:
+            interval = random.randint(480, 720)
+            time.sleep(interval)
+            
+            try:
+                response = requests.get(ping_url, timeout=10)
+                print(f"✅ Self-ping sent at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Status: {response.status_code}")
+            except Exception as e:
+                print(f"❌ Self-ping failed: {e}")
+    
+    ping_thread = threading.Thread(target=ping_loop)
+    ping_thread.daemon = True
+    ping_thread.start()
+    print("🚀 Self-ping system started! Server will ping itself every 8-12 minutes.")
+
+# শুধু Render এনভায়রনমেন্টে সেলফ-পিং চালু করুন
+if os.environ.get('RENDER'):
+    start_self_ping()
+else:
+    print("📍 Running in local mode - self-ping disabled")
 
 # ========== INITIALIZE DATABASE ==========
 
