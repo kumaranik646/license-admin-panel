@@ -1,21 +1,17 @@
-import os
-import uuid
-import json
-import hashlib
-import threading
-import requests
-import random
-import time
-from datetime import datetime, timedelta, timezone
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
-from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime, timedelta, timezone
+from functools import wraps
+import hashlib
+import uuid
+import os
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default-secret-key-change-in-production')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-key')
 
 # ডাটাবেস কনফিগারেশন - PostgreSQL (Render) অথবা SQLite (লোকাল)
 database_url = os.environ.get('DATABASE_URL')
@@ -29,89 +25,33 @@ else:
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-db = SQLAlchemy(app)
+from database import db, User, License, LicenseLog, ActivityLog
+db.init_app(app)
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
-
-# ========== ডাটাবেস মডেল ==========
-
-class User(UserMixin, db.Model):
-    __tablename__ = 'users'
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(100), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)
-    email = db.Column(db.String(255))
-    role = db.Column(db.String(20), default='sub_admin')
-    permissions = db.Column(db.Text)
-    created_by = db.Column(db.Integer)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    last_login = db.Column(db.DateTime)
-    status = db.Column(db.Boolean, default=True)
-    
-    def get_permissions(self):
-        if self.role == 'admin':
-            return ['all']
-        return json.loads(self.permissions) if self.permissions else []
-    
-    def set_permissions(self, perm_list):
-        self.permissions = json.dumps(perm_list)
-    
-    def has_permission(self, permission):
-        if self.role == 'admin':
-            return True
-        return permission in self.get_permissions()
-
-class License(db.Model):
-    __tablename__ = 'licenses'
-    id = db.Column(db.Integer, primary_key=True)
-    license_key = db.Column(db.String(100), unique=True, nullable=False)
-    device_id = db.Column(db.String(100))
-    status = db.Column(db.String(20), default='active')
-    expiry_date = db.Column(db.DateTime, nullable=False)
-    notes = db.Column(db.Text)
-    created_by = db.Column(db.Integer)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    last_verified = db.Column(db.DateTime)
-
-class LicenseLog(db.Model):
-    __tablename__ = 'license_logs'
-    id = db.Column(db.Integer, primary_key=True)
-    license_key = db.Column(db.String(100))
-    device_id = db.Column(db.String(100))
-    status = db.Column(db.String(50))
-    ip_address = db.Column(db.String(50))
-    verified_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-class ActivityLog(db.Model):
-    __tablename__ = 'activity_logs'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer)
-    username = db.Column(db.String(100))
-    action = db.Column(db.String(255))
-    details = db.Column(db.Text)
-    ip_address = db.Column(db.String(50))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# ========== হেল্পার ফাংশন ==========
+# ========== TEMPLATE CONTEXT PROCESSOR ==========
+@app.context_processor
+def utility_processor():
+    def get_now():
+        return datetime.now(timezone.utc).replace(tzinfo=None)
+    return dict(now=get_now())
+
+# ========== HELPER FUNCTIONS ==========
 
 def hash_password(password):
-    salt = os.environ.get('PASSWORD_SALT', 'default-salt')
+    salt = os.getenv('PASSWORD_SALT', 'default-salt')
     return hashlib.sha256(f"{password}{salt}".encode()).hexdigest()
 
 def verify_password(password, hashed):
-    salt = os.environ.get('PASSWORD_SALT', 'default-salt')
+    salt = os.getenv('PASSWORD_SALT', 'default-salt')
     return hashlib.sha256(f"{password}{salt}".encode()).hexdigest() == hashed
-
-def get_current_time():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
-
-def generate_license_key():
-    return f"AP-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:4].upper()}"
 
 def log_activity(user_id, username, action, details=None):
     try:
@@ -127,11 +67,54 @@ def log_activity(user_id, username, action, details=None):
     except:
         pass
 
-@app.context_processor
-def utility_processor():
-    return dict(now=get_current_time())
+def generate_license_key():
+    return f"AP-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:4].upper()}-{uuid.uuid4().hex[:4].upper()}"
 
-# ========== অথ রাউট ==========
+def get_current_time():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role != 'admin':
+            flash('Admin access required', 'danger')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
+def permission_required(permission):
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if not current_user.is_authenticated:
+                flash('Please login', 'warning')
+                return redirect(url_for('login'))
+            if not current_user.has_permission(permission):
+                flash(f'You need {permission} permission', 'danger')
+                return redirect(url_for('dashboard'))
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
+
+# ========== LICENSE QUERY HELPER ==========
+
+def get_visible_licenses():
+    if current_user.role == 'admin':
+        return License.query.order_by(License.created_at.desc())
+    else:
+        return License.query.filter_by(created_by=current_user.id).order_by(License.created_at.desc())
+
+def can_edit_license(license):
+    if current_user.role == 'admin':
+        return True
+    return current_user.has_permission('edit_licenses') and license.created_by == current_user.id
+
+def can_delete_license(license):
+    if current_user.role == 'admin':
+        return True
+    return current_user.has_permission('delete_licenses') and license.created_by == current_user.id
+
+# ========== AUTH ROUTES ==========
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -141,6 +124,7 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
+        
         user = User.query.filter_by(username=username, status=True).first()
         
         if user and verify_password(password, user.password):
@@ -160,10 +144,10 @@ def login():
 def logout():
     log_activity(current_user.id, current_user.username, 'logout', 'User logged out')
     logout_user()
-    flash('Logged out', 'info')
+    flash('Logged out successfully', 'info')
     return redirect(url_for('login'))
 
-# ========== ড্যাশবোর্ড ==========
+# ========== DASHBOARD ==========
 
 @app.route('/')
 @app.route('/dashboard')
@@ -211,75 +195,320 @@ def dashboard():
                          total_users=total_users,
                          recent_logs=recent_logs)
 
-# ========== লাইসেন্স ম্যানেজমেন্ট ==========
+# ========== LICENSE MANAGEMENT ==========
 
 @app.route('/licenses')
 @login_required
+@permission_required('view_licenses')
 def licenses():
-    if current_user.role == 'admin':
-        licenses_list = License.query.order_by(License.created_at.desc()).all()
-    else:
-        licenses_list = License.query.filter_by(created_by=current_user.id).order_by(License.created_at.desc()).all()
+    licenses_list = get_visible_licenses().all()
     return render_template('licenses.html', licenses=licenses_list)
 
 @app.route('/license/create', methods=['GET', 'POST'])
 @login_required
+@permission_required('create_licenses')
 def create_license():
     if request.method == 'POST':
-        license_key = request.form.get('license_key') or generate_license_key()
-        expiry_days = int(request.form.get('expiry_days', 365))
-        expiry_date = get_current_time() + timedelta(days=expiry_days)
-        status = request.form.get('status', 'active')
-        notes = request.form.get('notes', '')
-        
-        license = License(
-            license_key=license_key,
-            expiry_date=expiry_date,
-            status=status,
-            notes=notes,
-            created_by=current_user.id
-        )
-        db.session.add(license)
-        db.session.commit()
-        
-        log_activity(current_user.id, current_user.username, 'create_license', f'Created: {license_key}')
-        flash(f'✅ License created: {license_key}', 'success')
-        return redirect(url_for('licenses'))
+        try:
+            license_key = request.form.get('license_key') or generate_license_key()
+            device_id = request.form.get('device_id', '').strip()
+            if device_id == '':
+                device_id = None
+            
+            expiry_type = request.form.get('expiry_type', 'days')
+            
+            def safe_int(value, default=365):
+                try:
+                    if not value or value.strip() == '':
+                        return default
+                    return int(value)
+                except (ValueError, TypeError):
+                    return default
+            
+            if expiry_type == 'custom':
+                expiry_date_str = request.form.get('expiry_date_custom')
+                if not expiry_date_str:
+                    flash('Please select expiry date', 'danger')
+                    return redirect(url_for('create_license'))
+                expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d')
+            elif expiry_type == 'datetime':
+                expiry_datetime_str = request.form.get('expiry_datetime_custom')
+                if not expiry_datetime_str:
+                    flash('Please select expiry date and time', 'danger')
+                    return redirect(url_for('create_license'))
+                expiry_date = datetime.strptime(expiry_datetime_str, '%Y-%m-%dT%H:%M')
+            else:
+                expiry_value = safe_int(request.form.get('expiry_value'), 365)
+                if expiry_type == 'days':
+                    expiry_date = get_current_time() + timedelta(days=expiry_value)
+                elif expiry_type == 'hours':
+                    expiry_date = get_current_time() + timedelta(hours=expiry_value)
+                elif expiry_type == 'minutes':
+                    expiry_date = get_current_time() + timedelta(minutes=expiry_value)
+                else:
+                    expiry_date = get_current_time() + timedelta(days=365)
+            
+            status = request.form.get('status', 'active')
+            notes = request.form.get('notes', '')
+            
+            # Check if device ID already used
+            if device_id:
+                existing = License.query.filter_by(device_id=device_id).first()
+                if existing:
+                    flash(f'⚠️ Device ID {device_id} is already assigned to license: {existing.license_key}', 'warning')
+            
+            license = License(
+                license_key=license_key,
+                device_id=device_id,
+                expiry_date=expiry_date,
+                status=status,
+                notes=notes,
+                created_by=current_user.id
+            )
+            db.session.add(license)
+            db.session.commit()
+            
+            log_activity(current_user.id, current_user.username, 'create_license', f'Created: {license_key}')
+            flash(f'✅ License created: {license_key}<br>📅 Expires: {expiry_date.strftime("%Y-%m-%d %H:%M:%S")}<br>🖥️ Device: {device_id or "Not assigned"}', 'success')
+            return redirect(url_for('licenses'))
+        except Exception as e:
+            flash(f'Error creating license: {str(e)}', 'danger')
+            return redirect(url_for('create_license'))
     
     return render_template('create_license.html')
 
+@app.route('/license/edit/<int:id>', methods=['GET', 'POST'])
+@login_required
+@permission_required('edit_licenses')
+def edit_license(id):
+    license = License.query.get_or_404(id)
+    
+    if not can_edit_license(license):
+        flash('You do not have permission to edit this license', 'danger')
+        return redirect(url_for('licenses'))
+    
+    if request.method == 'POST':
+        try:
+            # Update device ID
+            device_id = request.form.get('device_id', '').strip()
+            if device_id == '':
+                device_id = None
+            
+            if device_id:
+                # Check if device ID is already used by another license
+                existing = License.query.filter(License.device_id == device_id, License.id != id).first()
+                if existing:
+                    flash(f'⚠️ Device ID {device_id} is already assigned to license: {existing.license_key}', 'warning')
+                else:
+                    license.device_id = device_id
+            else:
+                license.device_id = None
+            
+            # Update expiry date if provided
+            if request.form.get('expiry_date'):
+                license.expiry_date = datetime.strptime(request.form.get('expiry_date'), '%Y-%m-%d')
+            
+            # Update status
+            if request.form.get('status'):
+                license.status = request.form.get('status')
+            
+            # Update notes
+            license.notes = request.form.get('notes', '')
+            
+            db.session.commit()
+            
+            log_activity(current_user.id, current_user.username, 'edit_license', f'Edited license ID: {id}')
+            flash('✅ License updated successfully', 'success')
+            return redirect(url_for('licenses'))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating license: {str(e)}', 'danger')
+            return redirect(url_for('edit_license', id=id))
+    
+    return render_template('edit_license.html', license=license)
+
+@app.route('/license/renew/<int:id>', methods=['POST'])
+@login_required
+@permission_required('edit_licenses')
+def renew_license(id):
+    license = License.query.get_or_404(id)
+    
+    if not can_edit_license(license):
+        flash('You do not have permission to renew this license', 'danger')
+        return redirect(url_for('licenses'))
+    
+    renew_type = request.form.get('renew_type')
+    renew_value = int(request.form.get('renew_value', 0))
+    
+    current_expiry = license.expiry_date
+    now = get_current_time()
+    
+    if current_expiry < now:
+        base_date = now
+    else:
+        base_date = current_expiry
+    
+    if renew_type == 'days':
+        new_expiry = base_date + timedelta(days=renew_value)
+    elif renew_type == 'months':
+        new_expiry = base_date + timedelta(days=renew_value * 30)
+    elif renew_type == 'years':
+        new_expiry = base_date + timedelta(days=renew_value * 365)
+    else:
+        new_expiry = base_date + timedelta(days=renew_value)
+    
+    old_expiry = license.expiry_date
+    license.expiry_date = new_expiry
+    license.status = 'active'
+    db.session.commit()
+    
+    log_activity(current_user.id, current_user.username, 'renew_license', 
+                 f'Renewed license {license.license_key} from {old_expiry.strftime("%Y-%m-%d")} to {new_expiry.strftime("%Y-%m-%d")}')
+    flash(f'✅ License renewed! New expiry: {new_expiry.strftime("%Y-%m-%d %H:%M:%S")}', 'success')
+    return redirect(url_for('licenses'))
+
 @app.route('/license/delete/<int:id>')
 @login_required
+@permission_required('delete_licenses')
 def delete_license(id):
     license = License.query.get_or_404(id)
-    if current_user.role != 'admin' and license.created_by != current_user.id:
-        flash('Permission denied', 'danger')
+    
+    if not can_delete_license(license):
+        flash('You do not have permission to delete this license', 'danger')
         return redirect(url_for('licenses'))
     
     db.session.delete(license)
     db.session.commit()
+    log_activity(current_user.id, current_user.username, 'delete_license', f'Deleted license ID: {id}')
     flash('License deleted', 'success')
     return redirect(url_for('licenses'))
 
-@app.route('/license/edit/<int:id>', methods=['GET', 'POST'])
+@app.route('/license/device/unassign/<int:id>')
 @login_required
-def edit_license(id):
+@permission_required('edit_licenses')
+def unassign_device(id):
     license = License.query.get_or_404(id)
-    if current_user.role != 'admin' and license.created_by != current_user.id:
-        flash('Permission denied', 'danger')
-        return redirect(url_for('licenses'))
+    license.device_id = None
+    db.session.commit()
+    flash(f'Device unassigned from license: {license.license_key}', 'success')
+    return redirect(url_for('licenses'))
+
+# ========== USER MANAGEMENT ==========
+
+@app.route('/users')
+@login_required
+@admin_required
+def users():
+    users_list = User.query.order_by(User.created_at.desc()).all()
+    return render_template('users.html', users=users_list)
+
+@app.route('/user/create', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def create_user():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        email = request.form.get('email')
+        role = request.form.get('role', 'sub_admin')
+        permissions = request.form.getlist('permissions')
+        
+        if User.query.filter_by(username=username).first():
+            flash('Username exists', 'danger')
+            return redirect(url_for('create_user'))
+        
+        user = User(
+            username=username,
+            password=hash_password(password),
+            email=email,
+            role=role,
+            created_by=current_user.id,
+            status=True
+        )
+        user.set_permissions(permissions)
+        
+        db.session.add(user)
+        db.session.commit()
+        
+        log_activity(current_user.id, current_user.username, 'create_user', f'Created user: {username}')
+        flash(f'✅ User {username} created. Password: {password}', 'success')
+        return redirect(url_for('users'))
+    
+    available_permissions = [
+        'view_licenses', 'create_licenses', 'edit_licenses', 'delete_licenses',
+        'view_logs', 'api_access'
+    ]
+    return render_template('create_user.html', permissions=available_permissions)
+
+@app.route('/user/suspend/<int:id>')
+@login_required
+@admin_required
+def suspend_user(id):
+    user = User.query.get_or_404(id)
+    if user.id != current_user.id:
+        user.status = False
+        db.session.commit()
+        log_activity(current_user.id, current_user.username, 'suspend_user', f'Suspended: {user.username}')
+        flash(f'⚠️ User {user.username} suspended', 'warning')
+    return redirect(url_for('users'))
+
+@app.route('/user/activate/<int:id>')
+@login_required
+@admin_required
+def activate_user(id):
+    user = User.query.get_or_404(id)
+    user.status = True
+    db.session.commit()
+    log_activity(current_user.id, current_user.username, 'activate_user', f'Activated: {user.username}')
+    flash(f'✅ User {user.username} activated', 'success')
+    return redirect(url_for('users'))
+
+@app.route('/user/delete/<int:id>')
+@login_required
+@admin_required
+def delete_user(id):
+    user = User.query.get_or_404(id)
+    if user.id != current_user.id and user.role != 'admin':
+        username = user.username
+        db.session.delete(user)
+        db.session.commit()
+        log_activity(current_user.id, current_user.username, 'delete_user', f'Deleted: {username}')
+        flash(f'User {username} deleted', 'success')
+    return redirect(url_for('users'))
+
+@app.route('/user/permissions/<int:id>', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def edit_user_permissions(id):
+    user = User.query.get_or_404(id)
     
     if request.method == 'POST':
-        license.expiry_date = datetime.strptime(request.form.get('expiry_date'), '%Y-%m-%d')
-        license.status = request.form.get('status')
-        license.notes = request.form.get('notes', '')
+        permissions = request.form.getlist('permissions')
+        user.set_permissions(permissions)
         db.session.commit()
-        flash('License updated', 'success')
-        return redirect(url_for('licenses'))
+        log_activity(current_user.id, current_user.username, 'edit_permissions', f'Edited permissions for: {user.username}')
+        flash(f'✅ Permissions updated for {user.username}', 'success')
+        return redirect(url_for('users'))
     
-    return render_template('edit_license.html', license=license)
+    available_permissions = [
+        'view_licenses', 'create_licenses', 'edit_licenses', 'delete_licenses',
+        'view_logs', 'api_access'
+    ]
+    return render_template('edit_permissions.html', user=user, permissions=available_permissions)
 
-# ========== এপিআই ভেরিফিকেশন (লাইসেন্স চেক) ==========
+# ========== LOGS ==========
+
+@app.route('/logs')
+@login_required
+@permission_required('view_logs')
+def logs():
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+    pagination = ActivityLog.query.order_by(ActivityLog.created_at.desc()).paginate(page=page, per_page=per_page)
+    return render_template('logs.html', logs=pagination)
+
+# ========== API ==========
 
 @app.route('/api/validate')
 def api_validate():
@@ -309,9 +538,19 @@ def api_validate():
     if license.expiry_date < get_current_time():
         return jsonify({'status': 'expired', 'message': 'License has expired'})
     
-    license.last_verified = get_current_time()
-    if device_id and not license.device_id:
+    # Device lock check - যদি ডিভাইস আইডি সেট করা থাকে এবং মিল না হয়
+    if license.device_id and license.device_id != device_id:
+        return jsonify({
+            'status': 'device_mismatch', 
+            'message': f'This license is locked to device: {license.device_id[:10]}...'
+        })
+    
+    # প্রথমবার ডিভাইস আইডি সেট করা
+    if not license.device_id and device_id:
         license.device_id = device_id
+        db.session.commit()
+    
+    license.last_verified = get_current_time()
     db.session.commit()
     
     days_left = (license.expiry_date - get_current_time()).days
@@ -323,134 +562,13 @@ def api_validate():
         'days_left': days_left
     })
 
-# ========== ইউজার ম্যানেজমেন্ট (শুধু অ্যাডমিন) ==========
-
-@app.route('/users')
-@login_required
-def users():
-    if current_user.role != 'admin':
-        flash('Admin access required', 'danger')
-        return redirect(url_for('dashboard'))
-    users_list = User.query.order_by(User.created_at.desc()).all()
-    return render_template('users.html', users=users_list)
-
-@app.route('/user/create', methods=['GET', 'POST'])
-@login_required
-def create_user():
-    if current_user.role != 'admin':
-        flash('Admin access required', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        email = request.form.get('email')
-        role = request.form.get('role', 'sub_admin')
-        permissions = request.form.getlist('permissions')
-        
-        if User.query.filter_by(username=username).first():
-            flash('Username exists', 'danger')
-            return redirect(url_for('create_user'))
-        
-        user = User(
-            username=username,
-            password=hash_password(password),
-            email=email,
-            role=role,
-            created_by=current_user.id,
-            status=True
-        )
-        user.set_permissions(permissions)
-        db.session.add(user)
-        db.session.commit()
-        
-        log_activity(current_user.id, current_user.username, 'create_user', f'Created: {username}')
-        flash(f'User {username} created. Password: {password}', 'success')
-        return redirect(url_for('users'))
-    
-    available_permissions = [
-        'view_licenses', 'create_licenses', 'edit_licenses', 'delete_licenses',
-        'view_logs', 'api_access'
-    ]
-    return render_template('create_user.html', permissions=available_permissions)
-
-@app.route('/user/suspend/<int:id>')
-@login_required
-def suspend_user(id):
-    if current_user.role != 'admin':
-        flash('Admin access required', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    user = User.query.get_or_404(id)
-    if user.id != current_user.id:
-        user.status = False
-        db.session.commit()
-        flash(f'User {user.username} suspended', 'warning')
-    return redirect(url_for('users'))
-
-@app.route('/user/activate/<int:id>')
-@login_required
-def activate_user(id):
-    if current_user.role != 'admin':
-        flash('Admin access required', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    user = User.query.get_or_404(id)
-    user.status = True
-    db.session.commit()
-    flash(f'User {user.username} activated', 'success')
-    return redirect(url_for('users'))
-
-@app.route('/user/delete/<int:id>')
-@login_required
-def delete_user(id):
-    if current_user.role != 'admin':
-        flash('Admin access required', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    user = User.query.get_or_404(id)
-    if user.id != current_user.id and user.role != 'admin':
-        db.session.delete(user)
-        db.session.commit()
-        flash(f'User deleted', 'success')
-    return redirect(url_for('users'))
-
-@app.route('/user/permissions/<int:id>', methods=['GET', 'POST'])
-@login_required
-def edit_user_permissions(id):
-    if current_user.role != 'admin':
-        flash('Admin access required', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    user = User.query.get_or_404(id)
-    
-    if request.method == 'POST':
-        permissions = request.form.getlist('permissions')
-        user.set_permissions(permissions)
-        db.session.commit()
-        flash(f'Permissions updated for {user.username}', 'success')
-        return redirect(url_for('users'))
-    
-    available_permissions = [
-        'view_licenses', 'create_licenses', 'edit_licenses', 'delete_licenses',
-        'view_logs', 'api_access'
-    ]
-    return render_template('edit_permissions.html', user=user, permissions=available_permissions)
-
-# ========== লগস ==========
-
-@app.route('/logs')
-@login_required
-def logs():
-    page = request.args.get('page', 1, type=int)
-    per_page = 50
-    pagination = ActivityLog.query.order_by(ActivityLog.created_at.desc()).paginate(page=page, per_page=per_page)
-    return render_template('logs.html', logs=pagination)
-
 @app.route('/api/docs')
 @login_required
+@permission_required('api_access')
 def api_docs():
     return render_template('api_docs.html')
+
+# ========== PROFILE ==========
 
 @app.route('/profile', methods=['GET', 'POST'])
 @login_required
@@ -476,10 +594,19 @@ def profile():
     
     return render_template('profile.html')
 
-# ========== ডাটাবেস তৈরি ও ডিফল্ট অ্যাডমিন ==========
+# ========== INITIALIZE DATABASE ==========
 
 with app.app_context():
     db.create_all()
+    
+    # Check if device_id column exists, if not add it
+    try:
+        from sqlalchemy import text
+        db.session.execute(text('ALTER TABLE licenses ADD COLUMN device_id VARCHAR(100)'))
+        db.session.commit()
+        print("✅ device_id column added to licenses table")
+    except Exception as e:
+        print(f"Column device_id may already exist: {e}")
     
     if not User.query.filter_by(role='admin').first():
         admin = User(
@@ -494,62 +621,18 @@ with app.app_context():
         print("✅ Default admin created: admin / admin123")
     
     if License.query.count() == 0:
-        demo = License(
-            license_key='AP-DEMO-2024-001',
+        admin_user = User.query.filter_by(role='admin').first()
+        demo_license = License(
+            license_key='AP-B5D8-E8C2-9128',
             expiry_date=get_current_time() + timedelta(days=365),
             status='active',
-            notes='Demo license'
+            notes='Demo license - valid for 1 year',
+            created_by=admin_user.id if admin_user else 1
         )
-        db.session.add(demo)
+        db.session.add(demo_license)
         db.session.commit()
         print("✅ Demo license created")
 
-# ========== সেলফ পিং সিস্টেম (সার্ভার নিজেই নিজেকে জাগিয়ে রাখে) ==========
-
-def start_self_ping():
-    """প্রতি ৮-১২ মিনিট পর পর নিজেকে পিং দিয়ে সার্ভারকে জাগিয়ে রাখে"""
-    
-    def ping_loop():
-        # Render এ থাকলে নিজের URL বের করুন
-        if os.environ.get('RENDER'):
-            # RENDER_EXTERNAL_HOSTNAME এ আপনার অ্যাপের URL থাকে
-            hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '')
-            if hostname:
-                base_url = f"https://{hostname}"
-            else:
-                # যদি RENDER_EXTERNAL_HOSTNAME না থাকে, তাহলে Render দেওয়া URL ব্যবহার করুন
-                base_url = "https://license-admin-panel-evb7.onrender.com"  # আপনার Render URL বসান
-        else:
-            # লোকাল ডেভেলপমেন্টের জন্য
-            base_url = "http://localhost:5000"
-        
-        ping_url = f"{base_url}/api/validate?key=self_ping_keepalive&device=self"
-        
-        while True:
-            # ৮ থেকে ১২ মিনিটের মধ্যে র্যান্ডম সময় (480-720 সেকেন্ড)
-            interval = random.randint(480, 720)
-            time.sleep(interval)
-            
-            try:
-                response = requests.get(ping_url, timeout=10)
-                print(f"✅ Self-ping sent at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Status: {response.status_code}")
-            except Exception as e:
-                print(f"❌ Self-ping failed: {e}")
-    
-    # ব্যাকগ্রাউন্ড ডেমন থ্রেড শুরু করুন
-    ping_thread = threading.Thread(target=ping_loop)
-    ping_thread.daemon = True
-    ping_thread.start()
-    print("🚀 Self-ping system started! Server will ping itself every 8-12 minutes.")
-
-# শুধু Render এনভায়রনমেন্টে সেলফ-পিং চালু করুন (লোকালে চালানোর দরকার নেই)
-if os.environ.get('RENDER'):
-    start_self_ping()
-else:
-    print("📍 Running in local mode - self-ping disabled")
-
-# ========== এন্ট্রি পয়েন্ট ==========
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(debug=True, host='0.0.0.0', port=port)
