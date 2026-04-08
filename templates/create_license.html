@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block page_title %}Create License{% endblock %}
+{% block title %}Create License{% endblock %}
 
 {% block content %}
 <div class="card">
@@ -12,36 +12,30 @@
         </div>
         
         <div class="form-group">
-            <label>Device ID (Optional - leave empty for no device lock)</label>
-            <input type="text" name="device_id" placeholder="e.g., C389-63C4-B18C-38A7">
-            <small>💡 If you specify a Device ID, this license will only work on that device</small>
+            <label>Device ID (optional - lock to specific device)</label>
+            <input type="text" name="device_id" placeholder="Enter device ID to lock license">
+            <small>Leave empty to allow any device</small>
         </div>
         
         <div class="form-group">
             <label>Expiry Type</label>
             <select name="expiry_type" id="expiry_type" onchange="toggleExpiryFields()">
                 <option value="days">Days from now</option>
-                <option value="hours">Hours from now</option>
-                <option value="minutes">Minutes from now</option>
-                <option value="custom">Custom Date (YYYY-MM-DD)</option>
-                <option value="datetime">Custom Date & Time</option>
+                <option value="months">Months from now</option>
+                <option value="years">Years from now</option>
+                <option value="custom">Custom Date</option>
             </select>
         </div>
         
         <div id="value_fields" class="form-group">
             <label>Value</label>
-            <input type="number" name="expiry_value" value="365" min="1">
-            <small>Enter number of days/hours/minutes</small>
+            <input type="number" name="expiry_value" id="expiry_value" value="365" min="1" required>
+            <span id="value_unit">days</span>
         </div>
         
         <div id="custom_date_field" class="form-group" style="display: none;">
             <label>Expiry Date</label>
-            <input type="date" name="expiry_date_custom">
-        </div>
-        
-        <div id="custom_datetime_field" class="form-group" style="display: none;">
-            <label>Expiry Date & Time</label>
-            <input type="datetime-local" name="expiry_datetime_custom">
+            <input type="date" name="expiry_date_custom" id="expiry_date_custom">
         </div>
         
         <div class="form-group">
@@ -66,9 +60,31 @@
 <script>
 function toggleExpiryFields() {
     var type = document.getElementById('expiry_type').value;
-    document.getElementById('value_fields').style.display = (type === 'days' || type === 'hours' || type === 'minutes') ? 'block' : 'none';
-    document.getElementById('custom_date_field').style.display = (type === 'custom') ? 'block' : 'none';
-    document.getElementById('custom_datetime_field').style.display = (type === 'datetime') ? 'block' : 'none';
+    var valueFields = document.getElementById('value_fields');
+    var customDateField = document.getElementById('custom_date_field');
+    var valueUnit = document.getElementById('value_unit');
+    
+    if (type === 'custom') {
+        valueFields.style.display = 'none';
+        customDateField.style.display = 'block';
+    } else {
+        valueFields.style.display = 'block';
+        customDateField.style.display = 'none';
+        
+        if (type === 'days') {
+            valueUnit.innerHTML = 'days';
+            document.getElementById('expiry_value').placeholder = 'Enter number of days';
+        } else if (type === 'months') {
+            valueUnit.innerHTML = 'months';
+            document.getElementById('expiry_value').placeholder = 'Enter number of months';
+        } else if (type === 'years') {
+            valueUnit.innerHTML = 'years';
+            document.getElementById('expiry_value').placeholder = 'Enter number of years';
+        }
+    }
 }
+
+// Set default date for custom field
+document.getElementById('expiry_date_custom').value = new Date().toISOString().split('T')[0];
 </script>
 {% endblock %}
