@@ -11,23 +11,26 @@ import requests
 import random
 import time
 from dotenv import load_dotenv
+from sqlalchemy import text
 
 load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-key')
 
-# ডাটাবেস কনফিগারেশন - PostgreSQL (Render) অথবা SQLite (লোকাল)
+# PostgreSQL ডাটাবেস কনফিগারেশন
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
-    # Render 'postgres://' দেয়, SQLAlchemy 'postgresql://' চায়
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url.replace("postgres://", "postgresql://", 1)
 else:
-    # লোকাল ডেভেলপমেন্টের জন্য SQLite
     basedir = os.path.abspath(os.path.dirname(__file__))
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(basedir, "instance", "license.db")}'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 3600,
+}
 
 from database import db, User, License, LicenseLog, ActivityLog
 db.init_app(app)
@@ -219,39 +222,8 @@ def create_license():
             if device_id == '':
                 device_id = None
             
-            expiry_type = request.form.get('expiry_type', 'days')
-            
-            def safe_int(value, default=365):
-                try:
-                    if not value or value.strip() == '':
-                        return default
-                    return int(value)
-                except (ValueError, TypeError):
-                    return default
-            
-            if expiry_type == 'custom':
-                expiry_date_str = request.form.get('expiry_date_custom')
-                if not expiry_date_str:
-                    flash('Please select expiry date', 'danger')
-                    return redirect(url_for('create_license'))
-                expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d')
-            elif expiry_type == 'datetime':
-                expiry_datetime_str = request.form.get('expiry_datetime_custom')
-                if not expiry_datetime_str:
-                    flash('Please select expiry date and time', 'danger')
-                    return redirect(url_for('create_license'))
-                expiry_date = datetime.strptime(expiry_datetime_str, '%Y-%m-%dT%H:%M')
-            else:
-                expiry_value = safe_int(request.form.get('expiry_value'), 365)
-                if expiry_type == 'days':
-                    expiry_date = get_current_time() + timedelta(days=expiry_value)
-                elif expiry_type == 'hours':
-                    expiry_date = get_current_time() + timedelta(hours=expiry_value)
-                elif expiry_type == 'minutes':
-                    expiry_date = get_current_time() + timedelta(minutes=expiry_value)
-                else:
-                    expiry_date = get_current_time() + timedelta(days=365)
-            
+            expiry_days = int(request.form.get('expiry_days', 365))
+            expiry_date = get_current_time() + timedelta(days=expiry_days)
             status = request.form.get('status', 'active')
             notes = request.form.get('notes', '')
             
@@ -273,9 +245,10 @@ def create_license():
             db.session.commit()
             
             log_activity(current_user.id, current_user.username, 'create_license', f'Created: {license_key}')
-            flash(f'✅ License created: {license_key}<br>📅 Expires: {expiry_date.strftime("%Y-%m-%d %H:%M:%S")}<br>🖥️ Device: {device_id or "Not assigned"}', 'success')
+            flash(f'✅ License created: {license_key}<br>📅 Expires: {expiry_date.strftime("%Y-%m-%d")}<br>🖥️ Device: {device_id or "Not assigned"}', 'success')
             return redirect(url_for('licenses'))
         except Exception as e:
+            db.session.rollback()
             flash(f'Error creating license: {str(e)}', 'danger')
             return redirect(url_for('create_license'))
     
@@ -307,7 +280,7 @@ def edit_license(id):
             else:
                 license.device_id = None
             
-            # Update expiry date if provided
+            # Update expiry date
             if request.form.get('expiry_date'):
                 license.expiry_date = datetime.strptime(request.form.get('expiry_date'), '%Y-%m-%d')
             
@@ -319,7 +292,6 @@ def edit_license(id):
             license.notes = request.form.get('notes', '')
             
             db.session.commit()
-            
             log_activity(current_user.id, current_user.username, 'edit_license', f'Edited license ID: {id}')
             flash('✅ License updated successfully', 'success')
             return redirect(url_for('licenses'))
@@ -341,34 +313,13 @@ def renew_license(id):
         flash('You do not have permission to renew this license', 'danger')
         return redirect(url_for('licenses'))
     
-    renew_type = request.form.get('renew_type')
-    renew_value = int(request.form.get('renew_value', 0))
-    
-    current_expiry = license.expiry_date
-    now = get_current_time()
-    
-    if current_expiry < now:
-        base_date = now
-    else:
-        base_date = current_expiry
-    
-    if renew_type == 'days':
-        new_expiry = base_date + timedelta(days=renew_value)
-    elif renew_type == 'months':
-        new_expiry = base_date + timedelta(days=renew_value * 30)
-    elif renew_type == 'years':
-        new_expiry = base_date + timedelta(days=renew_value * 365)
-    else:
-        new_expiry = base_date + timedelta(days=renew_value)
-    
-    old_expiry = license.expiry_date
-    license.expiry_date = new_expiry
+    renew_days = int(request.form.get('renew_days', 30))
+    license.expiry_date = license.expiry_date + timedelta(days=renew_days)
     license.status = 'active'
     db.session.commit()
     
-    log_activity(current_user.id, current_user.username, 'renew_license', 
-                 f'Renewed license {license.license_key} from {old_expiry.strftime("%Y-%m-%d")} to {new_expiry.strftime("%Y-%m-%d")}')
-    flash(f'✅ License renewed! New expiry: {new_expiry.strftime("%Y-%m-%d %H:%M:%S")}', 'success')
+    log_activity(current_user.id, current_user.username, 'renew_license', f'Renewed license {license.license_key} by {renew_days} days')
+    flash(f'✅ License renewed! New expiry: {license.expiry_date.strftime("%Y-%m-%d")}', 'success')
     return redirect(url_for('licenses'))
 
 @app.route('/license/delete/<int:id>')
@@ -433,7 +384,6 @@ def create_user():
         
         db.session.add(user)
         db.session.commit()
-        
         log_activity(current_user.id, current_user.username, 'create_user', f'Created user: {username}')
         flash(f'✅ User {username} created. Password: {password}', 'success')
         return redirect(url_for('users'))
@@ -523,6 +473,7 @@ def api_validate():
     
     license = License.query.filter_by(license_key=license_key).first()
     
+    # Log the attempt
     log = LicenseLog(
         license_key=license_key,
         device_id=device_id,
@@ -548,6 +499,7 @@ def api_validate():
             'message': f'This license is locked to device: {license.device_id[:10]}...'
         })
     
+    # First time device assignment
     if not license.device_id and device_id:
         license.device_id = device_id
         db.session.commit()
@@ -608,14 +560,14 @@ def start_self_ping():
             if hostname:
                 base_url = f"https://{hostname}"
             else:
-                base_url = "https://license-admin-panel-6inb.onrender.com"
+                base_url = "https://license-admin-clean.onrender.com"  # আপনার Render URL বসান
         else:
             base_url = "http://localhost:5000"
         
         ping_url = f"{base_url}/api/validate?key=self_ping_keepalive&device=self"
         
         while True:
-            interval = random.randint(480, 720)
+            interval = random.randint(480, 720)  # 8-12 মিনিট
             time.sleep(interval)
             
             try:
@@ -638,17 +590,23 @@ else:
 # ========== INITIALIZE DATABASE ==========
 
 with app.app_context():
+    # প্রথমে ট্রানজেকশন রিসেট করুন
+    db.session.rollback()
+    
+    # টেবিল তৈরি করুন
     db.create_all()
+    print("✅ Database tables created")
     
-    # Check if device_id column exists, if not add it
+    # device_id কলাম যোগ করুন (নিরাপদভাবে)
     try:
-        from sqlalchemy import text
-        db.session.execute(text('ALTER TABLE licenses ADD COLUMN device_id VARCHAR(100)'))
+        db.session.execute(text('ALTER TABLE licenses ADD COLUMN IF NOT EXISTS device_id VARCHAR(100)'))
         db.session.commit()
-        print("✅ device_id column added to licenses table")
+        print("✅ device_id column checked/added")
     except Exception as e:
-        print(f"Column device_id may already exist: {e}")
+        db.session.rollback()
+        print(f"Note: device_id column may already exist: {e}")
     
+    # ডিফল্ট অ্যাডমিন তৈরি করুন
     if not User.query.filter_by(role='admin').first():
         admin = User(
             username='admin',
@@ -661,14 +619,14 @@ with app.app_context():
         db.session.commit()
         print("✅ Default admin created: admin / admin123")
     
+    # ডেমো লাইসেন্স তৈরি করুন
     if License.query.count() == 0:
-        admin_user = User.query.filter_by(role='admin').first()
         demo_license = License(
             license_key='AP-B5D8-E8C2-9128',
             expiry_date=get_current_time() + timedelta(days=365),
             status='active',
             notes='Demo license - valid for 1 year',
-            created_by=admin_user.id if admin_user else 1
+            created_by=1
         )
         db.session.add(demo_license)
         db.session.commit()
@@ -676,4 +634,4 @@ with app.app_context():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port)
