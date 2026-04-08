@@ -20,12 +20,12 @@
         <div class="form-group">
             <label>Expiry Type</label>
             <select name="expiry_type" id="expiry_type" onchange="toggleExpiryFields()" class="form-control">
-                <option value="days">Days</option>
-                <option value="hours">Hours</option>
                 <option value="minutes">Minutes</option>
+                <option value="hours">Hours</option>
+                <option value="days" selected>Days</option>
                 <option value="months">Months</option>
                 <option value="years">Years</option>
-                <option value="custom">Custom Date</option>
+                <option value="custom">Custom Date & Time</option>
             </select>
         </div>
         
@@ -73,15 +73,15 @@ function toggleExpiryFields() {
         valueFields.style.display = 'block';
         customDateField.style.display = 'none';
         
-        if (type === 'days') {
-            valueUnit.innerHTML = 'days';
-            document.getElementById('expiry_value').placeholder = 'Enter number of days';
+        if (type === 'minutes') {
+            valueUnit.innerHTML = 'minutes';
+            document.getElementById('expiry_value').placeholder = 'Enter number of minutes';
         } else if (type === 'hours') {
             valueUnit.innerHTML = 'hours';
             document.getElementById('expiry_value').placeholder = 'Enter number of hours';
-        } else if (type === 'minutes') {
-            valueUnit.innerHTML = 'minutes';
-            document.getElementById('expiry_value').placeholder = 'Enter number of minutes';
+        } else if (type === 'days') {
+            valueUnit.innerHTML = 'days';
+            document.getElementById('expiry_value').placeholder = 'Enter number of days';
         } else if (type === 'months') {
             valueUnit.innerHTML = 'months';
             document.getElementById('expiry_value').placeholder = 'Enter number of months';
@@ -92,7 +92,6 @@ function toggleExpiryFields() {
     }
 }
 
-// Set default date for custom field (current date + 1 year)
 var defaultDate = new Date();
 defaultDate.setFullYear(defaultDate.getFullYear() + 1);
 document.getElementById('expiry_datetime_custom').value = defaultDate.toISOString().slice(0, 16);
