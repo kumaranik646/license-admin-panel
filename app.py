@@ -608,7 +608,7 @@ def start_self_ping():
             if hostname:
                 base_url = f"https://{hostname}"
             else:
-                base_url = "https://license-admin-panel.onrender.com"
+                base_url = "https://license-admin-panel-6inb.onrender.com"
         else:
             base_url = "http://localhost:5000"
         
