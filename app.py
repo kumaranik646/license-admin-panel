@@ -21,7 +21,7 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'default-key')
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
     # Render 'postgres://' দেয়, SQLAlchemy 'postgresql://' চায়
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url.replace("postgresql://", "postgresql://", 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url.replace("postgres://", "postgresql://", 1)
 else:
     # লোকাল ডেভেলপমেন্টের জন্য SQLite
     basedir = os.path.abspath(os.path.dirname(__file__))
