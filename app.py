@@ -222,8 +222,31 @@ def create_license():
             if device_id == '':
                 device_id = None
             
-            expiry_days = int(request.form.get('expiry_days', 365))
-            expiry_date = get_current_time() + timedelta(days=expiry_days)
+            expiry_type = request.form.get('expiry_type', 'days')
+            
+            # Expiry date calculation based on type
+            if expiry_type == 'custom':
+                expiry_datetime_str = request.form.get('expiry_datetime_custom')
+                if not expiry_datetime_str:
+                    flash('Please select expiry date and time', 'danger')
+                    return redirect(url_for('create_license'))
+                expiry_date = datetime.strptime(expiry_datetime_str, '%Y-%m-%dT%H:%M')
+            else:
+                expiry_value = int(request.form.get('expiry_value', 365))
+                
+                if expiry_type == 'minutes':
+                    expiry_date = get_current_time() + timedelta(minutes=expiry_value)
+                elif expiry_type == 'hours':
+                    expiry_date = get_current_time() + timedelta(hours=expiry_value)
+                elif expiry_type == 'days':
+                    expiry_date = get_current_time() + timedelta(days=expiry_value)
+                elif expiry_type == 'months':
+                    expiry_date = get_current_time() + timedelta(days=expiry_value * 30)
+                elif expiry_type == 'years':
+                    expiry_date = get_current_time() + timedelta(days=expiry_value * 365)
+                else:
+                    expiry_date = get_current_time() + timedelta(days=365)
+            
             status = request.form.get('status', 'active')
             notes = request.form.get('notes', '')
             
@@ -245,7 +268,14 @@ def create_license():
             db.session.commit()
             
             log_activity(current_user.id, current_user.username, 'create_license', f'Created: {license_key}')
-            flash(f'✅ License created: {license_key}<br>📅 Expires: {expiry_date.strftime("%Y-%m-%d")}<br>🖥️ Device: {device_id or "Not assigned"}', 'success')
+            
+            # Format expiry message
+            if expiry_type == 'custom':
+                expiry_msg = expiry_date.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                expiry_msg = expiry_date.strftime('%Y-%m-%d')
+            
+            flash(f'✅ License created: {license_key}<br>📅 Expires: {expiry_msg}<br>🖥️ Device: {device_id or "Not assigned"}', 'success')
             return redirect(url_for('licenses'))
         except Exception as e:
             db.session.rollback()
@@ -548,40 +578,35 @@ def profile():
     
     return render_template('profile.html')
 
-# ========== সেলফ পিং সিস্টেম (সার্ভার নিজেই নিজেকে জাগিয়ে রাখে) ==========
+# ========== সেলফ পিং সিস্টেম ==========
 
 def start_self_ping():
-    """প্রতি ৮-১২ মিনিট পর পর নিজেকে পিং দিয়ে সার্ভারকে জাগিয়ে রাখে"""
-    
     def ping_loop():
-        # Render এ থাকলে নিজের URL বের করুন
         if os.environ.get('RENDER'):
             hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '')
             if hostname:
                 base_url = f"https://{hostname}"
             else:
-                base_url = "https://license-admin-panel-srbb.onrender.com"  # আপনার Render URL বসান
+                base_url = "https://license-admin-panel-srbb.onrender.com"
         else:
             base_url = "http://localhost:5000"
         
         ping_url = f"{base_url}/api/validate?key=self_ping_keepalive&device=self"
         
         while True:
-            interval = random.randint(480, 720)  # 8-12 মিনিট
+            interval = random.randint(480, 720)
             time.sleep(interval)
-            
             try:
-                response = requests.get(ping_url, timeout=10)
-                print(f"✅ Self-ping sent at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Status: {response.status_code}")
+                requests.get(ping_url, timeout=10)
+                print(f"✅ Self-ping sent at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             except Exception as e:
                 print(f"❌ Self-ping failed: {e}")
     
     ping_thread = threading.Thread(target=ping_loop)
     ping_thread.daemon = True
     ping_thread.start()
-    print("🚀 Self-ping system started! Server will ping itself every 8-12 minutes.")
+    print("🚀 Self-ping system started!")
 
-# শুধু Render এনভায়রনমেন্টে সেলফ-পিং চালু করুন
 if os.environ.get('RENDER'):
     start_self_ping()
 else:
@@ -590,14 +615,10 @@ else:
 # ========== INITIALIZE DATABASE ==========
 
 with app.app_context():
-    # প্রথমে ট্রানজেকশন রিসেট করুন
     db.session.rollback()
-    
-    # টেবিল তৈরি করুন
     db.create_all()
     print("✅ Database tables created")
     
-    # device_id কলাম যোগ করুন (নিরাপদভাবে)
     try:
         db.session.execute(text('ALTER TABLE licenses ADD COLUMN IF NOT EXISTS device_id VARCHAR(100)'))
         db.session.commit()
@@ -606,7 +627,6 @@ with app.app_context():
         db.session.rollback()
         print(f"Note: device_id column may already exist: {e}")
     
-    # ডিফল্ট অ্যাডমিন তৈরি করুন
     if not User.query.filter_by(role='admin').first():
         admin = User(
             username='admin',
@@ -619,7 +639,6 @@ with app.app_context():
         db.session.commit()
         print("✅ Default admin created: admin / admin123")
     
-    # ডেমো লাইসেন্স তৈরি করুন
     if License.query.count() == 0:
         demo_license = License(
             license_key='AP-B5D8-E8C2-9128',
