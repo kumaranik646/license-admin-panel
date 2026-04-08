@@ -19,28 +19,30 @@
         
         <div class="form-group">
             <label>Expiry Type</label>
-            <select name="expiry_type" id="expiry_type" onchange="toggleExpiryFields()">
-                <option value="days">Days from now</option>
-                <option value="months">Months from now</option>
-                <option value="years">Years from now</option>
+            <select name="expiry_type" id="expiry_type" onchange="toggleExpiryFields()" class="form-control">
+                <option value="days">Days</option>
+                <option value="hours">Hours</option>
+                <option value="minutes">Minutes</option>
+                <option value="months">Months</option>
+                <option value="years">Years</option>
                 <option value="custom">Custom Date</option>
             </select>
         </div>
         
         <div id="value_fields" class="form-group">
             <label>Value</label>
-            <input type="number" name="expiry_value" id="expiry_value" value="365" min="1" required>
-            <span id="value_unit">days</span>
+            <input type="number" name="expiry_value" id="expiry_value" value="365" min="1" required class="form-control" style="width: 200px; display: inline-block;">
+            <span id="value_unit" style="margin-left: 10px;">days</span>
         </div>
         
         <div id="custom_date_field" class="form-group" style="display: none;">
-            <label>Expiry Date</label>
-            <input type="date" name="expiry_date_custom" id="expiry_date_custom">
+            <label>Expiry Date & Time</label>
+            <input type="datetime-local" name="expiry_datetime_custom" id="expiry_datetime_custom" class="form-control">
         </div>
         
         <div class="form-group">
             <label>Status</label>
-            <select name="status">
+            <select name="status" class="form-control">
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
                 <option value="suspended">Suspended</option>
@@ -49,7 +51,7 @@
         
         <div class="form-group">
             <label>Notes</label>
-            <textarea name="notes" rows="3" placeholder="Optional notes about this license"></textarea>
+            <textarea name="notes" rows="3" placeholder="Optional notes about this license" class="form-control"></textarea>
         </div>
         
         <button type="submit" class="btn btn-success">Create License</button>
@@ -74,6 +76,12 @@ function toggleExpiryFields() {
         if (type === 'days') {
             valueUnit.innerHTML = 'days';
             document.getElementById('expiry_value').placeholder = 'Enter number of days';
+        } else if (type === 'hours') {
+            valueUnit.innerHTML = 'hours';
+            document.getElementById('expiry_value').placeholder = 'Enter number of hours';
+        } else if (type === 'minutes') {
+            valueUnit.innerHTML = 'minutes';
+            document.getElementById('expiry_value').placeholder = 'Enter number of minutes';
         } else if (type === 'months') {
             valueUnit.innerHTML = 'months';
             document.getElementById('expiry_value').placeholder = 'Enter number of months';
@@ -84,7 +92,9 @@ function toggleExpiryFields() {
     }
 }
 
-// Set default date for custom field
-document.getElementById('expiry_date_custom').value = new Date().toISOString().split('T')[0];
+// Set default date for custom field (current date + 1 year)
+var defaultDate = new Date();
+defaultDate.setFullYear(defaultDate.getFullYear() + 1);
+document.getElementById('expiry_datetime_custom').value = defaultDate.toISOString().slice(0, 16);
 </script>
 {% endblock %}
