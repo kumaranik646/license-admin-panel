@@ -560,7 +560,7 @@ def start_self_ping():
             if hostname:
                 base_url = f"https://{hostname}"
             else:
-                base_url = "https://license-admin-clean.onrender.com"  # আপনার Render URL বসান
+                base_url = "https://license-admin-panel-srbb.onrender.com"  # আপনার Render URL বসান
         else:
             base_url = "http://localhost:5000"
         
